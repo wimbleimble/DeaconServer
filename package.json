@@ -1,0 +1,15 @@
+{
+  "name": "beacon-backend",
+  "version": "0.0.1",
+  "description": "backend server for syncing",
+  "main": "server.js",
+  "scripts": {
+    "test": "echo \"Error: no test specified\" && exit 1",
+    "start": "node server.js"
+  },
+  "author": "",
+  "license": "ISC",
+  "dependencies": {
+    "ws": "^7.4.4"
+  }
+}
