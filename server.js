@@ -1,12 +1,20 @@
 const ws = require("ws");
+const rl = require("readline");
 const server = new ws.Server({ port: 6969 });
 
 server.on("connection", socket =>
 {
-	socket.on("message", msg =>
-	{
-		console.log("recieved %s", msg);
+	const duplex = ws.createWebSocketStream(socket, { encoding: 'utf8' });
+
+	const i = rl.createInterface({
+		input: duplex
 	});
-	socket.send("Hello!");
+
+	i.on("line", line =>
+	{
+		console.log(line);
+		if (line.includes("chk:"))
+			socket.send("y")
+	});
 	console.log("connected");
 });
