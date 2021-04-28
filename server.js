@@ -76,7 +76,7 @@ class GetData
 
 	async upload() // good lord this is slow
 	{
-		console.log("Adding readings to database...")
+		console.log(`Adding ${this.readings.length} readings to database...`);
 		const addBeaconIfAbsent = async uuid =>
 		{
 			if ((await pool.query("SELECT * FROM beacons WHERE id=$1::UUID;",
@@ -93,7 +93,7 @@ class GetData
 			await pool.query("INSERT INTO readings \
 				(rx_beacon, tx_beacon, contact_factor, time_stamp) VALUES \
 				($1::UUID, $2::UUID, $3, $4);",
-				[this.uuid, r.uuid, r.contact_factor, r.ts]);
+				[this.uuid, r.uuid, r.rssi, r.ts]);
 		});
 	}
 }
