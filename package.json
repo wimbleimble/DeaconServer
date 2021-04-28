@@ -10,6 +10,9 @@
   "author": "",
   "license": "ISC",
   "dependencies": {
+    "kalman-filter": "^1.9.2",
+    "node-schedule": "^2.0.0",
+    "pg": "^8.6.0",
     "ws": "^7.4.4"
   }
 }
