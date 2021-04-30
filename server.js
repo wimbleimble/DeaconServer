@@ -2,7 +2,7 @@ const ws = require("ws");
 const rl = require("readline");
 const scheduler = require("node-schedule");
 const Pool = require("pg").Pool;
-const { KalmanFilter } = require("kalman-filter");
+const Filter = require("kalman.js");
 
 const server = new ws.Server({ port: 6969 });
 const pool = new Pool({
@@ -11,6 +11,9 @@ const pool = new Pool({
 	database: "deacon",
 	password: "'\\{\\W^+ERTMj4a[R",
 });
+
+const thresholdContactFactor = 3;
+
 
 class Idle
 {
@@ -41,42 +44,83 @@ class GetData
 		{
 			await clearTimeout(this.timeout);
 			//await this.processReadings();
-			this.upload();
+			this.upload(this.processReadings());
 			return new Idle();
 		}
 		else
 		{
-			let items = line.split(',');
-			if (items.length === 3)
-				this.readings.push({
-					ts: new Date(items[0]),
-					uuid: items[1],
-					rssi: +items[2]
-				});
+			const items = line.split(',');
+			const uuid = items[1];
+			const reading = {
+				timestamp: new Date(items[0]),
+				rssi: +items[2]
+			};
+
+			if (!Object.keys(this.readings).includes(uuid))
+				this.readings[uuid] = [[reading]];
+			else
+			{
+				const prevSet = this.readings[uuid][this.readings[uuid].length - 1];
+				const prevReading = prevSet[prevSet.length - 1];
+				const elapsedTime = reading.timestamp.getTime() - prevReading.timestamp.getTime();
+				if (elapsedTime < 0)
+					console.log("broken reading");
+				else if (elapsedTime < 10000)
+					prevSet.push(reading);
+				else
+					this.readings[uuid].push([reading]);
+			}
 		}
+	}
+
+	growth(pos)
+	{
+		let factor = 1 / dummyData.rssi.length;
+		let growth = 1 + factor;
+		let decay = 1 - factor / 1.5;
+		if (pos < 0 || pos > 1)
+		{
+			console.log("Inavlid position.")
+			return 1;
+		}
+		return pos < 0.5 ? decay : growth;
 	}
 
 	async processReadings()
 	{
-		//contact = 5.1773ln(x) + 60.768
-		let rawData = [];
-		this.readings.forEach(reading =>
+		const ret = [];
+		Object.keys(this.readings).forEach(uuid =>
 		{
-			rawData.push(reading.rssi);
-		})
-		const kFilter = new KalmanFilter();
-		const kFilteredResults = kFilter.filterAll(rawData);
-		kFilteredResults.forEach(async (res, index) =>
-		{
-			this.readings[index].contact_factor =
-				Math.round(-5 * Math.log(res) + 60);
-		});
+			this.readings[uuid].forEach(set =>
+			{
+				let kalman = new Filter({
+					num: set.length, growthFunc: this.growth, R: 0.01, Q: 10
+				});
 
+				let min = null;
+				set.forEach(reading =>
+				{
+					let entry = {
+						timestamp: reading.timestamp,
+						contact_factor: (7.5 * kalman.filter(reading.rssi) + 50)
+					};
+					if (min === null)
+						min = entry;
+					else if (entry.contact_factor < min.contact_factor)
+						min = entry;
+				});
+
+				if (min.contact_factor < thresholdContactFactor)
+					ret.push({ uuid: uuid, ...min });
+			});
+
+		});
+		return ret;
 	}
 
-	async upload() // good lord this is slow
+	async upload(readings) // good lord this is slow
 	{
-		console.log(`Adding ${this.readings.length} readings to database...`);
+		console.log(`Adding ${readings.length} readings to database...`);
 		const addBeaconIfAbsent = async uuid =>
 		{
 			if ((await pool.query("SELECT * FROM beacons WHERE id=$1::UUID;",
@@ -87,13 +131,13 @@ class GetData
 
 		await addBeaconIfAbsent(this.uuid);
 
-		this.readings.forEach(async r =>
+		readings.forEach(async r =>
 		{
 			await addBeaconIfAbsent(r.uuid);
 			await pool.query("INSERT INTO readings \
 				(rx_beacon, tx_beacon, contact_factor, time_stamp) VALUES \
 				($1::UUID, $2::UUID, $3, $4);",
-				[this.uuid, r.uuid, r.rssi, r.ts]);
+				[this.uuid, r.uuid, r.rssi, r.timestamp]);
 		});
 	}
 }

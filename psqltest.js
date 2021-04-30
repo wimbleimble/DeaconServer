@@ -6,7 +6,7 @@ const pool = new Pool({
 	password: "'\\{\\W^+ERTMj4a[R",
 });
 
-pool.query("SELECT * FROM readings;").then(res =>
+pool.query("SELECT * FROM beacons;").then(res =>
 {
 	console.log(res);
 });
