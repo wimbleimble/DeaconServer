@@ -74,7 +74,7 @@ class VariableGrowthKalman
 	}
 	get A()
 	{
-		return this.growthFunc(this.curr / (this.num));
+		return this.growthFunc(this.curr / (this.num), this.num);
 	}
 
 	/**

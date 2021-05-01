@@ -2,7 +2,7 @@ const ws = require("ws");
 const rl = require("readline");
 const scheduler = require("node-schedule");
 const Pool = require("pg").Pool;
-const Filter = require("kalman.js");
+const Filter = require("./kalman.js");
 
 const server = new ws.Server({ port: 6969 });
 const pool = new Pool({
@@ -13,6 +13,11 @@ const pool = new Pool({
 });
 
 const thresholdContactFactor = 3;
+
+function clamp(val, min, max)
+{
+	return Math.min(Math.max(val, min), max)
+}
 
 
 class Idle
@@ -36,14 +41,11 @@ class GetData
 	{
 		this.uuid = uuid;
 		this.readings = [];
-		this.timeout = setTimeout(() => { state = new Idle() }, 5000);
 	}
 	async go(socket, line)
 	{
 		if (line === "done")
 		{
-			await clearTimeout(this.timeout);
-			//await this.processReadings();
 			this.upload(this.processReadings());
 			return new Idle();
 		}
@@ -73,9 +75,9 @@ class GetData
 		}
 	}
 
-	growth(pos)
+	growth(pos, length)
 	{
-		let factor = 1 / dummyData.rssi.length;
+		let factor = 1 / length;
 		let growth = 1 + factor;
 		let decay = 1 - factor / 1.5;
 		if (pos < 0 || pos > 1)
@@ -86,9 +88,9 @@ class GetData
 		return pos < 0.5 ? decay : growth;
 	}
 
-	async processReadings()
+	processReadings()
 	{
-		const ret = [];
+		let ret = [];
 		Object.keys(this.readings).forEach(uuid =>
 		{
 			this.readings[uuid].forEach(set =>
@@ -102,14 +104,18 @@ class GetData
 				{
 					let entry = {
 						timestamp: reading.timestamp,
-						contact_factor: (7.5 * kalman.filter(reading.rssi) + 50)
+						contact_factor:
+							Math.round(
+								clamp(((2 / 15) * kalman.filter(reading.rssi)
+									- (20 / 3)),
+									0, 4))
 					};
 					if (min === null)
 						min = entry;
 					else if (entry.contact_factor < min.contact_factor)
 						min = entry;
 				});
-
+				console.log(min);
 				if (min.contact_factor < thresholdContactFactor)
 					ret.push({ uuid: uuid, ...min });
 			});
@@ -137,7 +143,7 @@ class GetData
 			await pool.query("INSERT INTO readings \
 				(rx_beacon, tx_beacon, contact_factor, time_stamp) VALUES \
 				($1::UUID, $2::UUID, $3, $4);",
-				[this.uuid, r.uuid, r.rssi, r.timestamp]);
+				[this.uuid, r.uuid, r.contact_factor, r.timestamp]);
 		});
 	}
 }
